@@ -1,0 +1,15 @@
+{
+  "name": "workvision",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:lint": "npm --prefix apps/web run lint",
+    "web:build": "npm --prefix apps/web run build"
+  }
+}
