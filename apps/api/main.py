@@ -10,9 +10,11 @@ from redis.retry import Retry
 
 from api.hardware import router as hardware_router
 from api.health import router as health_router
+from api.realtime import router as realtime_router
 from api.v1 import router as v1_router
 from api.vision import router as vision_router
 from core.config import Settings
+from services.realtime import AdminEventHub
 from services.vision import VisionService
 
 logger = logging.getLogger(__name__)
@@ -35,17 +37,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             socket_timeout=1,
             retry=Retry(NoBackoff(), 0),
         )
+        app.state.admin_events = AdminEventHub()
         app.state.vision = VisionService(settings)
         await app.state.vision.load()
-        logger.info("service=workvision-api state=starting environment=%s", settings.app_env)
+        logger.info("service=vigil-os-api state=starting environment=%s", settings.app_env)
         try:
             yield
         finally:
             await app.state.redis.aclose()
-            logger.info("service=workvision-api state=stopped")
+            logger.info("service=vigil-os-api state=stopped")
 
     app = FastAPI(
-        title="WorkVision API",
+        title="Vigil OS API",
         description="Vision-first industrial safety platform — Phases 1 to 4.",
         version="0.4.0",
         lifespan=lifespan,
@@ -61,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(v1_router)
     app.include_router(vision_router)
     app.include_router(hardware_router)
+    app.include_router(realtime_router)
     return app
 
 

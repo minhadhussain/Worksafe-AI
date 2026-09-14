@@ -1,15 +1,27 @@
 {
-  "name": "workvision",
+  "name": "vigil-os",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/admin",
+    "apps/worker",
+    "shared"
+  ],
   "engines": {
     "node": ">=22.19.0"
   },
   "scripts": {
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down",
-    "web:dev": "npm --prefix apps/web run dev",
-    "web:lint": "npm --prefix apps/web run lint",
-    "web:build": "npm --prefix apps/web run build"
+    "admin:dev": "npm --prefix apps/admin run dev",
+    "admin:lint": "npm --prefix apps/admin run lint",
+    "admin:build": "npm --prefix apps/admin run build",
+    "worker:dev": "npm --prefix apps/worker run dev",
+    "worker:lint": "npm --prefix apps/worker run lint",
+    "worker:build": "npm --prefix apps/worker run build"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
   }
 }

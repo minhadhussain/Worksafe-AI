@@ -11,7 +11,7 @@ WORKSPACE_ROOT = (
     else API_ROOT.parent
 )
 ENV_FILE = (WORKSPACE_ROOT / ".env").resolve()
-DEFAULT_VISION_MODEL_WEIGHTS = (API_ROOT / "ml_models" / "workvision-ppe.pt").resolve()
+DEFAULT_VISION_MODEL_WEIGHTS = (API_ROOT / "ml_models" / "vigil-os-ppe.pt").resolve()
 
 
 class Settings(BaseSettings):
@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     vision_model_weights: Path = DEFAULT_VISION_MODEL_WEIGHTS
     vision_confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
     monitored_ppe_classes: list[str] = Field(default_factory=lambda: ["hardhat", "vest", "mask"])
+    worker_api_tokens: list[str] = Field(default_factory=lambda: ["dev_device_worker_001"])
+    worker_telemetry_ttl_seconds: int = Field(default=30, ge=10, le=3600)
     hardware_api_tokens: list[str] = Field(default_factory=lambda: ["dev_device_machine_001"])
     hardware_telemetry_ttl_seconds: int = Field(default=60, ge=10, le=3600)
     database_url: SecretStr = SecretStr("")
@@ -85,4 +87,12 @@ class Settings(BaseSettings):
         tokens = [token.strip() for token in value if token.strip()]
         if not tokens:
             raise ValueError("At least one hardware API token must be configured")
+        return tokens
+
+    @field_validator("worker_api_tokens")
+    @classmethod
+    def nonempty_worker_tokens(cls, value: list[str]) -> list[str]:
+        tokens = [token.strip() for token in value if token.strip()]
+        if not tokens:
+            raise ValueError("At least one worker API token must be configured")
         return tokens

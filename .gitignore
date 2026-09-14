@@ -14,9 +14,10 @@ __pycache__/
 .coverage
 htmlcov/
 .pio/
-apps/hardware/include/workvision_config.h
+apps/hardware/include/vigil_os_config.h
 apps/api/ml_models/*
 !apps/api/ml_models/.gitkeep
+apps/web/
 *.log
 .DS_Store
 Thumbs.db

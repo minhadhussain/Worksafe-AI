@@ -18,11 +18,18 @@ class HardwareInfo(BaseModel):
     token_count: int
 
 
+class WorkerInfo(BaseModel):
+    transport: Literal["websocket"] = "websocket"
+    telemetry_ttl_seconds: int
+    token_count: int
+
+
 class PlatformInfo(BaseModel):
-    name: str = "WorkVision API"
+    name: str = "Vigil OS API"
     version: str = "0.4.0"
-    phase: Literal["vision-hardware"] = "vision-hardware"
+    phase: Literal["worker-vision-hardware"] = "worker-vision-hardware"
     monitoring_enabled: bool = True
+    worker: WorkerInfo
     vision: VisionInfo
     hardware: HardwareInfo
 
@@ -32,6 +39,10 @@ async def platform_info(request: Request) -> PlatformInfo:
     settings = request.app.state.settings
     vision = request.app.state.vision
     return PlatformInfo(
+        worker=WorkerInfo(
+            telemetry_ttl_seconds=settings.worker_telemetry_ttl_seconds,
+            token_count=len(settings.worker_api_tokens),
+        ),
         vision=VisionInfo(
             model_loaded=vision.available,
             weights_path=str(vision.weights_path),

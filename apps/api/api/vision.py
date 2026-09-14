@@ -30,6 +30,7 @@ class VisionDetectionResponse(BaseModel):
 class VisionFrameResponse(BaseModel):
     status: Literal["processed"] = "processed"
     camera_id: str
+    timestamp: int | None = None
     inference_ms: float
     detections: list[VisionDetectionResponse]
     missing_classes: list[str]
@@ -64,21 +65,34 @@ async def process_vision_frame(
         ",".join(result.missing_classes) or "none",
         result.inference_ms,
     )
+    detections = [
+        VisionDetectionResponse(
+            label=detection.label,
+            confidence=detection.confidence,
+            x1=detection.x1,
+            y1=detection.y1,
+            x2=detection.x2,
+            y2=detection.y2,
+            classification=detection.classification,
+        )
+        for detection in result.detections
+    ]
+    await request.app.state.admin_events.broadcast(
+        {
+            "type": "vision.frame.processed",
+            "camera_id": payload.camera_id,
+            "timestamp": payload.timestamp,
+            "inference_ms": result.inference_ms,
+            "missing_classes": result.missing_classes,
+            "detections": [detection.model_dump(mode="json") for detection in detections],
+            "annotated_frame_base64": result.annotated_frame_base64,
+        }
+    )
     return VisionFrameResponse(
         camera_id=payload.camera_id,
+        timestamp=payload.timestamp,
         inference_ms=result.inference_ms,
         missing_classes=result.missing_classes,
-        detections=[
-            VisionDetectionResponse(
-                label=detection.label,
-                confidence=detection.confidence,
-                x1=detection.x1,
-                y1=detection.y1,
-                x2=detection.x2,
-                y2=detection.y2,
-                classification=detection.classification,
-            )
-            for detection in result.detections
-        ],
+        detections=detections,
         annotated_frame_base64=result.annotated_frame_base64,
     )

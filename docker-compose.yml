@@ -1,4 +1,4 @@
-name: workvision
+name: vigil-os
 
 services:
   gateway:
@@ -19,10 +19,13 @@ services:
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: ./apps/admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://localhost:8443/v1}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://localhost:8443/ws}
+        NEXT_PUBLIC_WORKER_ID: ${NEXT_PUBLIC_WORKER_ID:-W-001}
+        NEXT_PUBLIC_WORKER_TOKEN: ${NEXT_PUBLIC_WORKER_TOKEN:-dev_device_worker_001}
     environment:
       API_INTERNAL_URL: http://api:8000
     ports:
@@ -44,9 +47,11 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","https://localhost:8443","https://127.0.0.1:8443"]}'
-      VISION_MODEL_WEIGHTS: ${VISION_MODEL_WEIGHTS:-/app/ml_models/workvision-ppe.pt}
+      VISION_MODEL_WEIGHTS: ${VISION_MODEL_WEIGHTS:-/app/ml_models/vigil-os-ppe.pt}
       VISION_CONFIDENCE_THRESHOLD: ${VISION_CONFIDENCE_THRESHOLD:-0.25}
       REDIS_URL: redis://redis:6379/0
+      WORKER_API_TOKENS: '${WORKER_API_TOKENS:-["dev_device_worker_001"]}'
+      WORKER_TELEMETRY_TTL_SECONDS: ${WORKER_TELEMETRY_TTL_SECONDS:-30}
       HARDWARE_API_TOKENS: '${HARDWARE_API_TOKENS:-["dev_device_machine_001"]}'
       HARDWARE_TELEMETRY_TTL_SECONDS: ${HARDWARE_TELEMETRY_TTL_SECONDS:-60}
       DATABASE_URL: ${DATABASE_URL:-}

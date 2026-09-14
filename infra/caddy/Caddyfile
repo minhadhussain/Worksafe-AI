@@ -2,11 +2,11 @@
     local_certs
 }
 
-http://localhost:8080, http://127.0.0.1:8080, http://workvision.localhost:8080 {
+http://localhost:8080, http://127.0.0.1:8080, http://vigil-os.localhost:8080 {
     redir https://localhost:8443{uri}
 }
 
-https://localhost:8443, https://127.0.0.1:8443, https://workvision.localhost:8443 {
+https://localhost:8443, https://127.0.0.1:8443, https://vigil-os.localhost:8443 {
     tls internal
     encode zstd gzip
 

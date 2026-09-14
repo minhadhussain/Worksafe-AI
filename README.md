@@ -1,25 +1,29 @@
-# WorkVision
+# Vigil OS
 
-Phase 1 through Phase 4 implementation for the vision-first industrial safety MVP described in `docs/workvision_full.md`.
+Phase 1 through Phase 4 implementation for the vision-first industrial safety MVP described in `docs/vigil_os_full.md`.
 
 ## Architecture Overview
 
 The repository is a small monorepo with one web application, one API service, and a reserved hardware workspace:
 
 ```text
-apps/
-  api/        FastAPI service, health checks, Redis connectivity, future vision/telemetry endpoints
-  hardware/   Reserved ESP32 workspace for Phase 4 firmware
-  web/        Next.js unified web application with admin and worker entry views
+  apps/
+    admin/      Next.js admin/supervisor application
+    api/        FastAPI service, health checks, Redis connectivity, future vision/telemetry endpoints
+    hardware/   Reserved ESP32 workspace for Phase 4 firmware
+    worker/     Next.js worker/mobile application
+  shared/       Shared frontend UI primitives and helpers used by both apps
 infra/
   caddy/      Local HTTPS reverse proxy for browser secure-context testing
 ```
 
 Current implemented scope:
 
-- Next.js application shell for admin and worker routes
+- Separate Next.js admin and worker applications
+- Mobile worker client with DeviceMotion, Geolocation, Wake Lock, and WebSocket telemetry streaming
 - FastAPI foundation with health/readiness endpoints and explicit CORS configuration
 - FastAPI vision frame ingestion with OpenCV annotation and YOLOv8 model loading
+- FastAPI admin WebSocket route for real-time worker and vision events
 - Hardware telemetry ingestion for ESP32 nodes with token-authenticated HTTP posts
 - ESP32 firmware scaffold with non-blocking Wi-Fi reconnects, thermistor reads, vibration sampling, and telemetry publishing
 - Docker Compose stack for `gateway`, `web`, `api`, and `redis`
@@ -55,17 +59,59 @@ curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
-The Next.js UI exposes a live infrastructure status card, and the worker page keeps the required `Start Shift` entrypoint ready for Phase 2 sensor permissions.
+The Next.js UI exposes a live infrastructure status card, and the worker page can now request sensor permissions and stream telemetry over WebSockets from the required `Start Shift` click.
 
 ## Vision Model Setup
 
-Phase 3 expects a trained YOLOv8 weight file in `apps/api/ml_models/workvision-ppe.pt` by default.
+Phase 3 expects a trained YOLOv8 weight file in `apps/api/ml_models/vigil-os-ppe.pt` by default.
 
 - Supported ingest route: `POST /v1/vision/frame`
 - Request body: JSON with `camera_id`, `frame_base64`, and optional `annotate`
 - Response body: detections, missing PPE classes inferred from the frame, and an annotated JPEG frame encoded as base64
 
 The API loads the model during startup. In `production`, startup fails if the model cannot be loaded. In `development` and `test`, the API stays up and the vision route returns a structured `503` until weights and runtime dependencies are available.
+
+## Worker Telemetry Setup
+
+Phase 2 uses the mobile worker page at `/worker`.
+
+- Worker WebSocket route: `GET /ws/telemetry/worker/{worker_id}?token=...`
+- Admin alert stream: `GET /ws/admin/alerts`
+- Browser payload shape: `client_type`, `worker_id`, `timestamp`, `motion`, and optional `location`
+
+Relevant environment variables:
+
+- `NEXT_PUBLIC_WS_URL`
+- `NEXT_PUBLIC_WORKER_ID`
+- `NEXT_PUBLIC_WORKER_TOKEN`
+- `WORKER_API_TOKENS`
+- `WORKER_TELEMETRY_TTL_SECONDS`
+
+If GPS is denied, the worker client stays connected and the backend falls back to the logical zone label `Unknown Zone`.
+
+## Admin Login Setup
+
+The public landing page now links `Admin Login` to `/admin-login`.
+
+Server-side environment variables:
+
+- `ADMIN_LOGIN_IDENTIFIER`
+- `ADMIN_LOGIN_PASSCODE`
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_ADMIN_LOGIN_TABLE`
+
+The login route expects a Supabase table with at least these columns:
+
+- `identifier` text
+- `status` text
+- `source` text
+- `user_agent` text nullable
+- `ip_address` text nullable
+- `created_at` timestamptz default `now()`
+
+The route validates the configured username and passcode, attempts to store each login attempt in Supabase, then redirects successful logins to `/dashboard`.
 
 ## HTTPS And Local SSL
 
@@ -98,7 +144,7 @@ Raw piezo elements need protection and conditioning before they are connected to
 
 The ESP32 firmware publishes telemetry every 500 ms to `POST /v1/telemetry/hardware`.
 
-1. Copy `apps/hardware/include/workvision_config.example.h` to `apps/hardware/include/workvision_config.h`.
+1. Copy `apps/hardware/include/vigil_os_config.example.h` to `apps/hardware/include/vigil_os_config.h`.
 2. Fill in the Wi-Fi credentials, API base URL, node ID, and bearer token.
 3. Flash the board with PlatformIO.
 
@@ -120,10 +166,18 @@ Authentication uses `Authorization: Bearer <token>` and the API buffers the last
 
 ## Development Checks
 
-Web:
+Admin:
 
 ```bash
-cd apps/web
+cd apps/admin
+npm run lint
+npm run build
+```
+
+Worker:
+
+```bash
+cd apps/worker
 npm run lint
 npm run build
 ```
@@ -146,7 +200,6 @@ platformio run -d apps/hardware
 
 Still intentionally deferred:
 
-- DeviceMotion, Geolocation, Wake Lock, or WebSocket telemetry clients
 - Alert routing, heatmaps, or live dashboard event streams
 
 Those remain intentionally deferred to later phases from the specification.

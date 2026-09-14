@@ -1,1 +1,1 @@
-"""Vision, telemetry, and alerting services will be implemented in later phases."""
+"""Vision and realtime services for Vigil OS."""

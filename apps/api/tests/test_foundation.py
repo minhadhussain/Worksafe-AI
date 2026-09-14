@@ -81,7 +81,8 @@ def test_platform_reports_current_phase_capabilities(client_and_redis):
     response = client.get("/v1")
     assert response.status_code == 200
     body = response.json()
-    assert body["phase"] == "vision-hardware"
+    assert body["phase"] == "worker-vision-hardware"
     assert body["monitoring_enabled"] is True
+    assert body["worker"]["transport"] == "websocket"
     assert body["hardware"]["transport"] == "http"
     assert body["vision"]["model_loaded"] is False

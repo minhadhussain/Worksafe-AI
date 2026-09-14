@@ -18,7 +18,7 @@ protection and signal conditioning before connection to an ADC input.
 
 ## Firmware configuration
 
-1. Copy `include/workvision_config.example.h` to `include/workvision_config.h`.
+1. Copy `include/vigil_os_config.example.h` to `include/vigil_os_config.h`.
 2. Fill in the Wi-Fi credentials, backend base URL, node ID, and bearer token.
 3. Flash the board with PlatformIO.
 

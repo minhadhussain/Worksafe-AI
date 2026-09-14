@@ -11,12 +11,12 @@ router = APIRouter(prefix="/health", tags=["Health"])
 
 class Liveness(BaseModel):
     status: Literal["alive"] = "alive"
-    service: str = "workvision-api"
+    service: str = "vigil-os-api"
 
 
 class Readiness(BaseModel):
     status: Literal["ready", "degraded"]
-    service: str = "workvision-api"
+    service: str = "vigil-os-api"
     dependencies: dict[Literal["redis"], Literal["up", "down"]]
 
 

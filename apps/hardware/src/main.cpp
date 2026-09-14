@@ -5,10 +5,10 @@
 #include <math.h>
 #include <time.h>
 
-#if __has_include("workvision_config.h")
-#include "workvision_config.h"
+#if __has_include("vigil_os_config.h")
+#include "vigil_os_config.h"
 #else
-#include "workvision_config.example.h"
+#include "vigil_os_config.example.h"
 #endif
 
 namespace {
@@ -24,21 +24,21 @@ unsigned long last_telemetry_ms = 0;
 unsigned long last_clock_sync_ms = 0;
 
 String telemetryEndpoint() {
-  return String(workvision::API_BASE_URL) + "/v1/telemetry/hardware";
+  return String(vigil_os::API_BASE_URL) + "/v1/telemetry/hardware";
 }
 
 void beginWifiAttempt() {
   last_wifi_attempt_ms = millis();
   WiFi.disconnect(false, true);
-  WiFi.begin(workvision::WIFI_SSID, workvision::WIFI_PASSWORD);
-  Serial.printf("wifi state=reconnecting ssid=%s\n", workvision::WIFI_SSID);
+  WiFi.begin(vigil_os::WIFI_SSID, vigil_os::WIFI_PASSWORD);
+  Serial.printf("wifi state=reconnecting ssid=%s\n", vigil_os::WIFI_SSID);
 }
 
 void ensureWifiConnected() {
   if (WiFi.status() == WL_CONNECTED) {
     return;
   }
-  if (millis() - last_wifi_attempt_ms < workvision::WIFI_RECONNECT_INTERVAL_MS) {
+  if (millis() - last_wifi_attempt_ms < vigil_os::WIFI_RECONNECT_INTERVAL_MS) {
     return;
   }
   beginWifiAttempt();
@@ -64,31 +64,31 @@ unsigned long currentTimestamp() {
 }
 
 float readThermistorCelsius() {
-  int raw = analogRead(workvision::THERMISTOR_PIN);
-  raw = constrain(raw, 1, workvision::ADC_MAX_READING - 1);
+  int raw = analogRead(vigil_os::THERMISTOR_PIN);
+  raw = constrain(raw, 1, vigil_os::ADC_MAX_READING - 1);
 
-  float divider_ratio = static_cast<float>(workvision::ADC_MAX_READING) / static_cast<float>(raw) - 1.0f;
-  float resistance_ohms = workvision::SERIES_RESISTOR_OHMS / divider_ratio;
+  float divider_ratio = static_cast<float>(vigil_os::ADC_MAX_READING) / static_cast<float>(raw) - 1.0f;
+  float resistance_ohms = vigil_os::SERIES_RESISTOR_OHMS / divider_ratio;
 
-  float steinhart = resistance_ohms / workvision::THERMISTOR_NOMINAL_OHMS;
+  float steinhart = resistance_ohms / vigil_os::THERMISTOR_NOMINAL_OHMS;
   steinhart = log(steinhart);
-  steinhart /= workvision::THERMISTOR_BETA;
-  steinhart += 1.0f / (workvision::THERMISTOR_NOMINAL_CELSIUS + 273.15f);
+  steinhart /= vigil_os::THERMISTOR_BETA;
+  steinhart += 1.0f / (vigil_os::THERMISTOR_NOMINAL_CELSIUS + 273.15f);
   steinhart = 1.0f / steinhart;
   return steinhart - 273.15f;
 }
 
 float readVibrationRms() {
   double sum_squares = 0.0;
-  constexpr float midpoint = workvision::ADC_MAX_READING / 2.0f;
+  constexpr float midpoint = vigil_os::ADC_MAX_READING / 2.0f;
 
-  for (int i = 0; i < workvision::VIBRATION_SAMPLE_COUNT; ++i) {
-    float centered = static_cast<float>(analogRead(workvision::VIBRATION_PIN)) - midpoint;
+  for (int i = 0; i < vigil_os::VIBRATION_SAMPLE_COUNT; ++i) {
+    float centered = static_cast<float>(analogRead(vigil_os::VIBRATION_PIN)) - midpoint;
     sum_squares += centered * centered;
-    delayMicroseconds(workvision::VIBRATION_SAMPLE_DELAY_US);
+    delayMicroseconds(vigil_os::VIBRATION_SAMPLE_DELAY_US);
   }
 
-  float rms_counts = sqrt(sum_squares / static_cast<double>(workvision::VIBRATION_SAMPLE_COUNT));
+  float rms_counts = sqrt(sum_squares / static_cast<double>(vigil_os::VIBRATION_SAMPLE_COUNT));
   return rms_counts / midpoint;
 }
 
@@ -103,7 +103,7 @@ TelemetrySample sampleTelemetry() {
 String serializeTelemetry(const TelemetrySample& sample) {
   StaticJsonDocument<256> document;
   document["client_type"] = "machine_node";
-  document["node_id"] = workvision::NODE_ID;
+  document["node_id"] = vigil_os::NODE_ID;
   document["timestamp"] = sample.timestamp;
 
   JsonObject metrics = document.createNestedObject("metrics");
@@ -127,17 +127,17 @@ void publishTelemetry(const TelemetrySample& sample) {
     return;
   }
 
-  http.setConnectTimeout(workvision::HTTP_TIMEOUT_MS);
-  http.setTimeout(workvision::HTTP_TIMEOUT_MS);
+  http.setConnectTimeout(vigil_os::HTTP_TIMEOUT_MS);
+  http.setTimeout(vigil_os::HTTP_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + workvision::HARDWARE_TOKEN);
+  http.addHeader("Authorization", String("Bearer ") + vigil_os::HARDWARE_TOKEN);
 
   String payload = serializeTelemetry(sample);
   int status_code = http.POST(payload);
   if (status_code >= 200 && status_code < 300) {
     Serial.printf(
         "telemetry state=accepted node_id=%s temperature_c=%.2f vibration_rms=%.4f\n",
-        workvision::NODE_ID,
+        vigil_os::NODE_ID,
         sample.temperature_c,
         sample.vibration_rms);
   } else {
@@ -158,10 +158,10 @@ void setup() {
   WiFi.setSleep(false);
 
   analogReadResolution(12);
-  analogSetPinAttenuation(workvision::THERMISTOR_PIN, ADC_11db);
-  analogSetPinAttenuation(workvision::VIBRATION_PIN, ADC_11db);
+  analogSetPinAttenuation(vigil_os::THERMISTOR_PIN, ADC_11db);
+  analogSetPinAttenuation(vigil_os::VIBRATION_PIN, ADC_11db);
 
-  Serial.printf("boot node_id=%s endpoint=%s\n", workvision::NODE_ID, telemetryEndpoint().c_str());
+  Serial.printf("boot node_id=%s endpoint=%s\n", vigil_os::NODE_ID, telemetryEndpoint().c_str());
   beginWifiAttempt();
 }
 
@@ -169,7 +169,7 @@ void loop() {
   ensureWifiConnected();
   syncClockIfNeeded();
 
-  if (millis() - last_telemetry_ms >= workvision::TELEMETRY_INTERVAL_MS) {
+  if (millis() - last_telemetry_ms >= vigil_os::TELEMETRY_INTERVAL_MS) {
     last_telemetry_ms = millis();
     publishTelemetry(sampleTelemetry());
   }
