@@ -44,7 +44,11 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","https://localhost:8443","https://127.0.0.1:8443"]}'
+      VISION_MODEL_WEIGHTS: ${VISION_MODEL_WEIGHTS:-/app/ml_models/workvision-ppe.pt}
+      VISION_CONFIDENCE_THRESHOLD: ${VISION_CONFIDENCE_THRESHOLD:-0.25}
       REDIS_URL: redis://redis:6379/0
+      HARDWARE_API_TOKENS: '${HARDWARE_API_TOKENS:-["dev_device_machine_001"]}'
+      HARDWARE_TELEMETRY_TTL_SECONDS: ${HARDWARE_TELEMETRY_TTL_SECONDS:-60}
       DATABASE_URL: ${DATABASE_URL:-}
     ports:
       - "127.0.0.1:8000:8000"

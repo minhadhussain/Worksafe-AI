@@ -76,8 +76,12 @@ def test_cors_rejects_non_origin_configuration(origin):
         Settings(_env_file=None, cors_origins=[origin])
 
 
-def test_platform_does_not_claim_monitoring_is_active(client_and_redis):
+def test_platform_reports_current_phase_capabilities(client_and_redis):
     client, _ = client_and_redis
     response = client.get("/v1")
     assert response.status_code == 200
-    assert response.json()["monitoring_enabled"] is False
+    body = response.json()
+    assert body["phase"] == "vision-hardware"
+    assert body["monitoring_enabled"] is True
+    assert body["hardware"]["transport"] == "http"
+    assert body["vision"]["model_loaded"] is False

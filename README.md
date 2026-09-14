@@ -1,6 +1,6 @@
 # WorkVision
 
-Phase 1 foundation for the vision-first industrial safety MVP described in `docs/workvision_full.md`.
+Phase 1 through Phase 4 implementation for the vision-first industrial safety MVP described in `docs/workvision_full.md`.
 
 ## Architecture Overview
 
@@ -15,10 +15,13 @@ infra/
   caddy/      Local HTTPS reverse proxy for browser secure-context testing
 ```
 
-Current Phase 1 scope:
+Current implemented scope:
 
 - Next.js application shell for admin and worker routes
 - FastAPI foundation with health/readiness endpoints and explicit CORS configuration
+- FastAPI vision frame ingestion with OpenCV annotation and YOLOv8 model loading
+- Hardware telemetry ingestion for ESP32 nodes with token-authenticated HTTP posts
+- ESP32 firmware scaffold with non-blocking Wi-Fi reconnects, thermistor reads, vibration sampling, and telemetry publishing
 - Docker Compose stack for `gateway`, `web`, `api`, and `redis`
 - Local HTTPS entrypoint on `https://localhost:8443` for browser APIs that require a secure context
 
@@ -26,7 +29,7 @@ Current Phase 1 scope:
 
 - `gateway`: Caddy reverse proxy with local TLS termination
 - `web`: Next.js standalone production build
-- `api`: FastAPI service with Redis-backed readiness checks
+- `api`: FastAPI service with Redis-backed readiness checks, vision processing, and hardware telemetry ingestion
 - `redis`: message broker and low-latency state store for later phases
 
 Primary URLs after `docker compose up --build`:
@@ -54,6 +57,16 @@ curl http://localhost:8000/health/ready
 
 The Next.js UI exposes a live infrastructure status card, and the worker page keeps the required `Start Shift` entrypoint ready for Phase 2 sensor permissions.
 
+## Vision Model Setup
+
+Phase 3 expects a trained YOLOv8 weight file in `apps/api/ml_models/workvision-ppe.pt` by default.
+
+- Supported ingest route: `POST /v1/vision/frame`
+- Request body: JSON with `camera_id`, `frame_base64`, and optional `annotate`
+- Response body: detections, missing PPE classes inferred from the frame, and an annotated JPEG frame encoded as base64
+
+The API loads the model during startup. In `production`, startup fails if the model cannot be loaded. In `development` and `test`, the API stays up and the vision route returns a structured `503` until weights and runtime dependencies are available.
+
 ## HTTPS And Local SSL
 
 Phase 2 device sensors need a secure context. Phase 1 now includes a local TLS gateway:
@@ -70,7 +83,7 @@ Notes:
 
 ## Hardware Wiring
 
-The hardware implementation is intentionally deferred to Phase 4, but the repository already reserves the ESP32 workspace.
+The Phase 4 hardware workspace now includes a real PlatformIO configuration and an ESP32 firmware entrypoint.
 
 Recommended provisional wiring on a classic ESP32 DevKit:
 
@@ -80,6 +93,30 @@ Recommended provisional wiring on a classic ESP32 DevKit:
 - 3.3 V logic only
 
 Raw piezo elements need protection and conditioning before they are connected to an ADC input.
+
+## Hardware Node Setup
+
+The ESP32 firmware publishes telemetry every 500 ms to `POST /v1/telemetry/hardware`.
+
+1. Copy `apps/hardware/include/workvision_config.example.h` to `apps/hardware/include/workvision_config.h`.
+2. Fill in the Wi-Fi credentials, API base URL, node ID, and bearer token.
+3. Flash the board with PlatformIO.
+
+Telemetry payload shape:
+
+```json
+{
+  "client_type": "machine_node",
+  "node_id": "M-EXTRUDER-1",
+  "timestamp": 1718362912,
+  "metrics": {
+    "temperature_c": 72.4,
+    "vibration_rms": 14.2
+  }
+}
+```
+
+Authentication uses `Authorization: Bearer <token>` and the API buffers the last known hardware state in Redis.
 
 ## Development Checks
 
@@ -99,13 +136,17 @@ cd apps/api
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+Hardware:
+
+```bash
+platformio run -d apps/hardware
+```
+
 ## Phase Boundaries
 
-Phase 1 does not include:
+Still intentionally deferred:
 
 - DeviceMotion, Geolocation, Wake Lock, or WebSocket telemetry clients
-- Vision ingestion, OpenCV processing, or YOLO inference
-- ESP32 firmware logic
 - Alert routing, heatmaps, or live dashboard event streams
 
 Those remain intentionally deferred to later phases from the specification.
