@@ -8,12 +8,15 @@ from redis.asyncio import Redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 
+from api.cameras import router as cameras_router
 from api.hardware import router as hardware_router
 from api.health import router as health_router
 from api.realtime import router as realtime_router
 from api.v1 import router as v1_router
 from api.vision import router as vision_router
 from core.config import Settings
+from services.cameras import CameraManager
+from services.incidents import IncidentStore
 from services.realtime import AdminEventHub
 from services.vision import VisionService
 
@@ -40,10 +43,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.admin_events = AdminEventHub()
         app.state.vision = VisionService(settings)
         await app.state.vision.load()
+        app.state.incidents = IncidentStore()
+        app.state.cameras = CameraManager(
+            settings, app.state.vision, app.state.incidents, app.state.admin_events,
+        )
+        if settings.cameras_enabled:
+            app.state.cameras.start()
         logger.info("service=vigil-os-api state=starting environment=%s", settings.app_env)
         try:
             yield
         finally:
+            await app.state.cameras.stop()
             await app.state.redis.aclose()
             logger.info("service=vigil-os-api state=stopped")
 
@@ -65,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(vision_router)
     app.include_router(hardware_router)
     app.include_router(realtime_router)
+    app.include_router(cameras_router)
     return app
 
 

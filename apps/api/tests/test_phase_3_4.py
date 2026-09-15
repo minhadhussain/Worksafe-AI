@@ -13,7 +13,9 @@ from services.vision import VisionDetection, VisionFrameResult
 def client_and_redis():
     redis = AsyncMock()
     redis.ping.return_value = True
-    settings = Settings(_env_file=None, app_env="test", cors_origins=["http://localhost:3000"])
+    settings = Settings(_env_file=None, app_env="test", cameras_enabled=False,
+                        vision_model_weights="missing-test-model.pt",
+                        cors_origins=["http://localhost:3000"])
     with patch("main.Redis.from_url", return_value=redis):
         with TestClient(create_app(settings)) as client:
             yield client, redis

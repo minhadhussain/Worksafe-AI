@@ -8,30 +8,35 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 class AdminEventHub:
     def __init__(self) -> None:
-        self._connections: set[WebSocket] = set()
+        self._connections: dict[WebSocket, asyncio.Lock] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, initial: dict | None = None) -> None:
         await websocket.accept()
+        send_lock = asyncio.Lock()
         async with self._lock:
-            self._connections.add(websocket)
+            async with send_lock:
+                if initial is not None:
+                    await websocket.send_json(initial)
+                self._connections[websocket] = send_lock
 
     async def disconnect(self, websocket: WebSocket) -> None:
         async with self._lock:
-            self._connections.discard(websocket)
+            self._connections.pop(websocket, None)
 
     async def broadcast(self, event: dict[str, Any]) -> None:
         async with self._lock:
-            connections = tuple(self._connections)
+            connections = tuple(self._connections.items())
 
-        stale_connections: list[WebSocket] = []
-        for websocket in connections:
+        async def send(websocket: WebSocket, send_lock: asyncio.Lock) -> None:
             try:
-                await websocket.send_json(event)
-            except (OSError, RuntimeError, WebSocketDisconnect):
-                stale_connections.append(websocket)
-
-        if stale_connections:
-            async with self._lock:
-                for websocket in stale_connections:
-                    self._connections.discard(websocket)
+                async with asyncio.timeout(1):
+                    async with send_lock:
+                        await websocket.send_json(event)
+            except (TimeoutError, OSError, RuntimeError, WebSocketDisconnect):
+                await self.disconnect(websocket)
+                try:
+                    await asyncio.wait_for(websocket.close(code=1013), timeout=0.1)
+                except (TimeoutError, OSError, RuntimeError, WebSocketDisconnect):
+                    pass
+        await asyncio.gather(*(send(websocket, lock) for websocket, lock in connections))

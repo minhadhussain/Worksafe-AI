@@ -4,9 +4,8 @@ import "@fontsource-variable/inter";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "VIGIL OS | Industrial Safety Intelligence", template: "%s | VIGIL OS" },
-  description:
-    "Unify computer vision, worker telemetry, and machine monitoring into one real-time safety intelligence system.",
+  title: { default: "VIGIL OS | Worker Safety", template: "%s | VIGIL OS" },
+  description: "Motion-based fall detection for worker safety.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

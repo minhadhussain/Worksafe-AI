@@ -10,7 +10,7 @@ https://localhost:8443, https://127.0.0.1:8443, https://vigil-os.localhost:8443 
     tls internal
     encode zstd gzip
 
-    @api path /health /health/* /v1 /v1/* /docs /docs/* /openapi.json /redoc /redoc/* /ws /ws/*
+    @api path /health /health/* /v1 /v1/* /api/cameras /api/cameras/* /api/admin/* /api/worker/fall /api/worker/fall/* /docs /docs/* /openapi.json /redoc /redoc/* /ws /ws/*
     handle @api {
         reverse_proxy api:8000
     }

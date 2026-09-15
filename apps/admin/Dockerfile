@@ -2,7 +2,7 @@ FROM node:22-alpine AS deps
 WORKDIR /app/apps/admin
 COPY apps/admin/package.json apps/admin/package-lock.json ./
 COPY shared /app/shared
-RUN npm ci
+RUN npm install
 
 FROM node:22-alpine AS builder
 WORKDIR /app/apps/admin

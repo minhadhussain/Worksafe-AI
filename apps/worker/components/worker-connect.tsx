@@ -1,553 +1,229 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ArrowRight, LoaderCircle, MapPin, Move3D, ShieldCheck } from "lucide-react";
-
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vigil-os/shared/components/ui/card";
-import { Button } from "@vigil-os/shared/components/ui/button";
-import { getHealth } from "@vigil-os/shared/lib/health";
-import { cn } from "@vigil-os/shared/lib/utils";
-
-type ShiftState = "idle" | "connecting" | "streaming" | "stopped" | "error";
-type CapabilityState = "pending" | "granted" | "denied" | "unavailable";
-type SocketState = "idle" | "connecting" | "connected" | "disconnected" | "error";
-
-type MotionSample = {
-  accelG: number;
-  gyroRad: number;
-  capturedAt: number | null;
-};
-
-type LocationSample = {
-  lat: number;
-  lng: number;
-};
-
-type WorkerSocketMessage = {
-  type?: string;
-  detail?: string;
-  zone_label?: string;
-};
-
-type WakeLockSentinelLike = {
-  release: () => Promise<void>;
-  addEventListener?: (type: "release", listener: () => void) => void;
-};
-
-type DeviceMotionPermissionConstructor = typeof DeviceMotionEvent & {
-  requestPermission?: () => Promise<"granted" | "denied">;
-};
-
-type WakeLockNavigator = Navigator & {
-  wakeLock?: {
-    request: (type: "screen") => Promise<WakeLockSentinelLike>;
-  };
-};
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CONFIRMATION_WINDOW_MS, FallDetector } from "@/lib/fall-detector";
+import { isSafetyApiConfigured, sendFallEvent, type FallPayload } from "@/lib/fall-api";
+import styles from "./worker-safety.module.css";
 
 const WORKER_ID = process.env.NEXT_PUBLIC_WORKER_ID || "W-001";
-const WORKER_TOKEN = process.env.NEXT_PUBLIC_WORKER_TOKEN || "dev_device_worker_001";
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
-const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || API_BASE_URL.replace(/^http/i, "ws");
-const SAMPLE_INTERVAL_MS = 100;
-const EMPTY_MOTION: MotionSample = { accelG: 0, gyroRad: 0, capturedAt: null };
+const SENSOR_WAIT_MS = 5000;
+const REPORT_TIMEOUT_MS = 10_000;
+type MotionConstructor = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<"granted" | "denied">;
+};
+type Phase = "idle" | "requesting" | "monitoring" | "possible" | "sending" | "notified" | "failed" | "resolving";
+type Screen = { phase: Phase; note?: string };
 
-function buildWorkerSocketUrl(workerId: string, token: string): string {
-  const url = new URL(WS_BASE_URL.replace(/^http/i, "ws"));
-  const basePath = url.pathname.replace(/\/$/, "");
-  url.pathname = basePath.endsWith("/ws")
-    ? `${basePath}/telemetry/worker/${encodeURIComponent(workerId)}`
-    : `${basePath}/ws/telemetry/worker/${encodeURIComponent(workerId)}`;
-  url.searchParams.set("token", token);
-  return url.toString();
-}
-
-function readMotionSample(event: DeviceMotionEvent): MotionSample {
-  const acceleration = event.accelerationIncludingGravity || event.acceleration;
-  const x = acceleration?.x || 0;
-  const y = acceleration?.y || 0;
-  const z = acceleration?.z || 0;
-  const alpha = event.rotationRate?.alpha || 0;
-  const beta = event.rotationRate?.beta || 0;
-  const gamma = event.rotationRate?.gamma || 0;
-
-  return {
-    accelG: Number((Math.hypot(x, y, z) / 9.80665).toFixed(2)),
-    gyroRad: Number((Math.hypot(alpha, beta, gamma) * (Math.PI / 180)).toFixed(2)),
-    capturedAt: Date.now(),
-  };
-}
-
-async function requestMotionPermission(): Promise<CapabilityState> {
-  if (typeof window === "undefined" || typeof window.DeviceMotionEvent === "undefined") {
-    return "unavailable";
+function accelerationMagnitude(event: DeviceMotionEvent): number | null {
+  for (const vector of [event.accelerationIncludingGravity, event.acceleration]) {
+    if (vector && [vector.x, vector.y, vector.z].every((n) => typeof n === "number" && Number.isFinite(n))) {
+      return Math.hypot(vector.x!, vector.y!, vector.z!) / 9.80665;
+    }
   }
-
-  const constructor = window.DeviceMotionEvent as DeviceMotionPermissionConstructor;
-  if (!constructor.requestPermission) {
-    return "granted";
-  }
-
-  try {
-    return (await constructor.requestPermission()) === "granted" ? "granted" : "denied";
-  } catch {
-    return "denied";
-  }
-}
-
-function formatCapabilityState(state: CapabilityState | SocketState): string {
-  switch (state) {
-    case "granted":
-      return "Active";
-    case "connected":
-      return "Connected";
-    case "connecting":
-      return "Connecting";
-    case "disconnected":
-      return "Disconnected";
-    case "error":
-      return "Error";
-    case "denied":
-      return "Denied";
-    case "unavailable":
-      return "Unavailable";
-    default:
-      return "Waiting";
-  }
-}
-
-function toneClasses(state: CapabilityState | SocketState): string {
-  if (state === "granted" || state === "connected") return "bg-emerald-400";
-  if (state === "connecting" || state === "pending") return "bg-amber-300";
-  return "bg-rose-300";
-}
-
-function formatLocation(location: LocationSample | null): string {
-  if (!location) return "Unknown Zone fallback";
-  return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`;
-}
-
-function formatSampleTime(timestamp: number | null): string {
-  if (!timestamp) return "Waiting for sample";
-  return new Date(timestamp).toLocaleTimeString();
-}
-
-function StatusTile({
-  title,
-  value,
-  hint,
-}: {
-  title: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border/80 bg-muted/35 p-4">
-      <p className="text-xs uppercase tracking-widest text-muted-foreground">{title}</p>
-      <p className="mt-2 text-base font-semibold text-foreground">{value}</p>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{hint}</p>
-    </div>
-  );
+  return null;
 }
 
 export function WorkerConnect() {
-  const [shiftState, setShiftState] = useState<ShiftState>("idle");
-  const [socketState, setSocketState] = useState<SocketState>("idle");
-  const [motionState, setMotionState] = useState<CapabilityState>("pending");
-  const [locationState, setLocationState] = useState<CapabilityState>("pending");
-  const [wakeLockState, setWakeLockState] = useState<CapabilityState>("pending");
-  const [motion, setMotion] = useState<MotionSample>(EMPTY_MOTION);
-  const [location, setLocation] = useState<LocationSample | null>(null);
-  const [zoneLabel, setZoneLabel] = useState("Unknown Zone");
-  const [statusMessage, setStatusMessage] = useState(
-    "Tap Start Shift to request motion and location access, then begin live telemetry.",
-  );
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  const [streamingSince, setStreamingSince] = useState<number | null>(null);
+  const [screen, setScreen] = useState<Screen>({ phase: "idle" });
+  const phase = useRef<Phase>("idle");
+  const mounted = useRef(false);
+  const generation = useRef(0);
+  const detector = useRef(new FallDetector());
+  const listener = useRef<((event: DeviceMotionEvent) => void) | null>(null);
+  const confirmationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sensorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reportTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const pending = useRef<FallPayload | null>(null);
+  const incidentId = useRef<string | null>(null);
+  const inFlight = useRef(false);
+  const retryResolution = useRef(false);
 
-  const motionRef = useRef<MotionSample>(EMPTY_MOTION);
-  const locationRef = useRef<LocationSample | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const sendIntervalRef = useRef<number | null>(null);
-  const locationWatchIdRef = useRef<number | null>(null);
-  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null);
-  const shiftActiveRef = useRef(false);
-  const motionListenerRef = useRef<(event: DeviceMotionEvent) => void>((event) => {
-    motionRef.current = readMotionSample(event);
-  });
-
-  useEffect(() => {
-    async function cleanupResources() {
-      shiftActiveRef.current = false;
-      if (typeof window !== "undefined") {
-        window.removeEventListener("devicemotion", motionListenerRef.current);
-      }
-      if (sendIntervalRef.current !== null) {
-        window.clearInterval(sendIntervalRef.current);
-        sendIntervalRef.current = null;
-      }
-      if (locationWatchIdRef.current !== null && typeof navigator !== "undefined") {
-        navigator.geolocation.clearWatch(locationWatchIdRef.current);
-        locationWatchIdRef.current = null;
-      }
-      if (socketRef.current) {
-        socketRef.current.onopen = null;
-        socketRef.current.onmessage = null;
-        socketRef.current.onerror = null;
-        socketRef.current.onclose = null;
-        if (socketRef.current.readyState < WebSocket.CLOSING) {
-          socketRef.current.close(1000, "Worker stopped");
-        }
-        socketRef.current = null;
-      }
-      if (wakeLockRef.current) {
-        await wakeLockRef.current.release().catch(() => undefined);
-        wakeLockRef.current = null;
-      }
-    }
-
-    return () => {
-      void cleanupResources();
-    };
+  const show = useCallback((next: Screen) => {
+    phase.current = next.phase;
+    if (mounted.current) setScreen(next);
   }, []);
 
-  async function cleanupResources() {
-    shiftActiveRef.current = false;
-    window.removeEventListener("devicemotion", motionListenerRef.current);
-    if (sendIntervalRef.current !== null) {
-      window.clearInterval(sendIntervalRef.current);
-      sendIntervalRef.current = null;
+  const cleanup = useCallback(() => {
+    generation.current += 1;
+    if (listener.current) window.removeEventListener("devicemotion", listener.current);
+    listener.current = null;
+    for (const timer of [confirmationTimer, sensorTimer, reportTimer]) {
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = null;
     }
-    if (locationWatchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(locationWatchIdRef.current);
-      locationWatchIdRef.current = null;
-    }
-    if (socketRef.current) {
-      socketRef.current.onopen = null;
-      socketRef.current.onmessage = null;
-      socketRef.current.onerror = null;
-      socketRef.current.onclose = null;
-      if (socketRef.current.readyState < WebSocket.CLOSING) {
-        socketRef.current.close(1000, "Worker stopped");
-      }
-      socketRef.current = null;
-    }
-    if (wakeLockRef.current) {
-      await wakeLockRef.current.release().catch(() => undefined);
-      wakeLockRef.current = null;
-    }
+    request.current?.abort();
+    request.current = null;
+    detector.current.reset();
+    pending.current = null;
+    incidentId.current = null;
+    inFlight.current = false;
+    retryResolution.current = false;
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; cleanup(); };
+  }, [cleanup]);
+
+  function stopMonitoring() {
+    cleanup();
+    show({ phase: "idle" });
   }
 
-  async function stopShift(
-    nextState: Exclude<ShiftState, "connecting" | "idle"> = "stopped",
-    message = "Shift telemetry stopped.",
-  ) {
-    await cleanupResources();
-    setShiftState(nextState);
-    setSocketState("disconnected");
-    setWakeLockState((current) => (current === "granted" ? "pending" : current));
-    setStatusMessage(message);
-    setStreamingSince(null);
-  }
-
-  function beginLocationWatch() {
-    if (!("geolocation" in navigator)) {
-      setLocationState("unavailable");
-      setZoneLabel("Unknown Zone");
-      return;
-    }
-
+  async function reportFall(resolve = false) {
+    if (inFlight.current || !pending.current || (resolve && !incidentId.current)) return;
+    const session = generation.current;
+    inFlight.current = true;
+    retryResolution.current = resolve;
+    show({ phase: resolve ? "resolving" : "sending" });
+    const controller = new AbortController();
+    request.current = controller;
+    reportTimer.current = setTimeout(() => controller.abort(), REPORT_TIMEOUT_MS);
     try {
-      locationWatchIdRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          const nextLocation = {
-            lat: Number(position.coords.latitude.toFixed(6)),
-            lng: Number(position.coords.longitude.toFixed(6)),
-          };
-          locationRef.current = nextLocation;
-          setLocation(nextLocation);
-          setLocationState("granted");
-        },
-        (error) => {
-          locationRef.current = null;
-          setLocation(null);
-          setLocationState(error.code === error.PERMISSION_DENIED ? "denied" : "unavailable");
-          setZoneLabel("Unknown Zone");
-        },
-        { enableHighAccuracy: true, maximumAge: 5_000, timeout: 10_000 },
+      const acknowledgment = await sendFallEvent(
+        pending.current, resolve ? incidentId.current : null, controller.signal,
       );
+      if (!mounted.current || generation.current !== session) return;
+      incidentId.current = acknowledgment.id;
+      if (acknowledgment.status === "resolved") {
+        pending.current = null;
+        incidentId.current = null;
+        detector.current.rearm(performance.now());
+        show({ phase: "monitoring" });
+      } else {
+        show({ phase: "notified" });
+      }
     } catch {
-      setLocationState("unavailable");
+      if (!mounted.current || generation.current !== session) return;
+      show({ phase: "failed", note: resolve
+        ? "Could not confirm resolution. The alert remains active."
+        : "Could not reach safety system." });
+    } finally {
+      // An old request must not change a newly started monitoring session.
+      if (generation.current === session) {
+        if (reportTimer.current !== null) clearTimeout(reportTimer.current);
+        reportTimer.current = null;
+        request.current = null;
+        inFlight.current = false;
+      }
     }
   }
 
-  async function acquireWakeLock() {
+  async function startMonitoring() {
+    if (phase.current !== "idle") return;
     if (!window.isSecureContext) {
-      setWakeLockState("unavailable");
+      show({ phase: "idle", note: "SECURE CONNECTION REQUIRED" });
+      return;
+    }
+    if (typeof window.DeviceMotionEvent === "undefined") {
+      show({ phase: "idle", note: "MOTION SENSOR UNAVAILABLE" });
+      return;
+    }
+    if (!isSafetyApiConfigured()) {
+      show({ phase: "idle", note: "SAFETY SYSTEM UNAVAILABLE" });
       return;
     }
 
-    const wakeLockNavigator = navigator as WakeLockNavigator;
-    if (!wakeLockNavigator.wakeLock) {
-      setWakeLockState("unavailable");
-      return;
-    }
-
+    const session = ++generation.current;
+    show({ phase: "requesting" });
     try {
-      const sentinel = await wakeLockNavigator.wakeLock.request("screen");
-      sentinel.addEventListener?.("release", () => {
-        wakeLockRef.current = null;
-        setWakeLockState("pending");
-      });
-      wakeLockRef.current = sentinel;
-      setWakeLockState("granted");
+      // Keep the permission call on the START click, before any asynchronous work.
+      const constructor = window.DeviceMotionEvent as MotionConstructor;
+      const permission = constructor.requestPermission ? await constructor.requestPermission() : "granted";
+      if (!mounted.current || generation.current !== session) return;
+      if (permission !== "granted") {
+        show({ phase: "idle", note: "MOTION ACCESS DENIED" });
+        return;
+      }
+
+      detector.current.reset();
+      show({ phase: "monitoring" });
+      sensorTimer.current = setTimeout(() => {
+        if (generation.current !== session) return;
+        cleanup();
+        show({ phase: "idle", note: "MOTION SENSOR UNAVAILABLE" });
+      }, SENSOR_WAIT_MS);
+
+      listener.current = (event) => {
+        if (generation.current !== session || pending.current) return;
+        const force = accelerationMagnitude(event);
+        if (force === null) return;
+        if (sensorTimer.current !== null) clearTimeout(sensorTimer.current);
+        sensorTimer.current = null;
+        const result = detector.current.sample(force, performance.now());
+        if (result === "possible") {
+          show({ phase: "possible" });
+          if (confirmationTimer.current !== null) clearTimeout(confirmationTimer.current);
+          confirmationTimer.current = setTimeout(() => {
+            confirmationTimer.current = null;
+            if (generation.current === session && phase.current === "possible") {
+              detector.current.expire(performance.now());
+              show({ phase: "monitoring" });
+            }
+          }, CONFIRMATION_WINDOW_MS);
+        } else if (result === "clear") {
+          if (confirmationTimer.current !== null) clearTimeout(confirmationTimer.current);
+          confirmationTimer.current = null;
+          show({ phase: "monitoring" });
+        } else if (result === "confirmed") {
+          if (confirmationTimer.current !== null) clearTimeout(confirmationTimer.current);
+          confirmationTimer.current = null;
+          pending.current = { worker_id: WORKER_ID, event_id: crypto.randomUUID(), timestamp: Date.now() / 1000 };
+          void reportFall();
+        }
+      };
+      window.addEventListener("devicemotion", listener.current);
     } catch {
-      setWakeLockState("denied");
+      if (!mounted.current || generation.current !== session) return;
+      cleanup();
+      show({ phase: "idle", note: "MOTION SENSOR UNAVAILABLE" });
     }
   }
 
-  function openTelemetrySocket(
-    workerId: string,
-    token: string,
-    motionPermission: CapabilityState,
-  ) {
-    const socket = new WebSocket(buildWorkerSocketUrl(workerId, token));
-    socketRef.current = socket;
-
-    socket.onopen = () => {
-      setSocketState("connected");
-      setShiftState("streaming");
-      setStreamingSince(Date.now());
-      setStatusMessage(
-        motionPermission === "denied"
-          ? "Connected. GPS and backend sync are live; motion access is limited."
-          : "Connected. Motion, location, and WebSocket telemetry are streaming.",
-      );
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data) as WorkerSocketMessage;
-        if (message.type === "worker.connected") {
-          setZoneLabel(message.zone_label || "Unknown Zone");
-          return;
-        }
-        if (message.type === "worker.accepted") {
-          setZoneLabel(message.zone_label || "Unknown Zone");
-          setLastSyncedAt(Date.now());
-          return;
-        }
-        if (message.type === "worker.error") {
-          void stopShift("error", message.detail || "Worker telemetry was rejected by the API.");
-        }
-      } catch {
-        setStatusMessage("Received an unreadable server message on the telemetry channel.");
-      }
-    };
-
-    socket.onerror = () => {
-      setSocketState("error");
-      setShiftState("error");
-      setStatusMessage("The worker telemetry channel could not be established.");
-    };
-
-    socket.onclose = (event) => {
-      setSocketState("disconnected");
-      if (shiftActiveRef.current) {
-        void stopShift("error", event.reason || "The worker telemetry channel closed unexpectedly.");
-      }
-    };
-  }
-
-  function sendTelemetrySnapshot() {
-    const socket = socketRef.current;
-    if (!shiftActiveRef.current || !socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    const payload = {
-      client_type: "worker_mobile",
-      worker_id: WORKER_ID,
-      timestamp: Math.floor(Date.now() / 1000),
-      motion: {
-        accel_g: motionRef.current.accelG,
-        gyro_rad: motionRef.current.gyroRad,
-      },
-      location: locationRef.current,
-    };
-
-    socket.send(JSON.stringify(payload));
-    setMotion(motionRef.current);
-    setLocation(locationRef.current);
-  }
-
-  async function startShift() {
-    if (shiftState === "connecting") return;
-
-    await cleanupResources();
-    motionRef.current = EMPTY_MOTION;
-    locationRef.current = null;
-    shiftActiveRef.current = true;
-    setShiftState("connecting");
-    setSocketState("connecting");
-    setMotionState("pending");
-    setLocationState("pending");
-    setWakeLockState("pending");
-    setMotion(EMPTY_MOTION);
-    setLocation(null);
-    setZoneLabel("Unknown Zone");
-    setLastSyncedAt(null);
-    setStreamingSince(null);
-    setStatusMessage("Checking backend readiness and requesting sensor access…");
-
-    try {
-      const health = await getHealth(AbortSignal.timeout(5_000));
-      if (health.status !== "ready") {
-        throw new Error("The API or Redis is not ready for telemetry streaming.");
-      }
-
-      const motionPermission = await requestMotionPermission();
-      setMotionState(motionPermission);
-
-      window.addEventListener("devicemotion", motionListenerRef.current);
-      beginLocationWatch();
-      await acquireWakeLock();
-
-      setStatusMessage(
-        motionPermission === "denied"
-          ? "Motion access was denied. GPS and connectivity will continue with limited telemetry."
-          : "Opening the worker telemetry channel…",
-      );
-
-      openTelemetrySocket(WORKER_ID, WORKER_TOKEN, motionPermission);
-      sendIntervalRef.current = window.setInterval(sendTelemetrySnapshot, SAMPLE_INTERVAL_MS);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to start the worker shift.";
-      await stopShift("error", detail);
-    }
-  }
+  const critical = ["sending", "notified", "failed", "resolving"].includes(screen.phase);
+  const circleText = screen.phase === "possible" ? "POSSIBLE FALL"
+    : screen.phase === "requesting" ? "STARTING" : "MONITORING";
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap gap-3">
-        <Button size="lg" className="flex-1 min-w-52" onClick={startShift} disabled={shiftState === "connecting"}>
-          {shiftState === "connecting" ? (
-            <LoaderCircle className="motion-safe:animate-spin" aria-hidden="true" />
-          ) : (
-            <ArrowRight aria-hidden="true" />
-          )}
-          {shiftState === "streaming" ? "Reconnect Shift" : "Start Shift & Connect"}
-        </Button>
-        <Button
-          size="lg"
-          variant="outline"
-          className="min-w-40"
-          onClick={() => void stopShift()}
-          disabled={shiftState !== "streaming" && shiftState !== "error"}
-        >
-          Stop Shift
-        </Button>
-      </div>
+    <main id="main" className={`${styles.page} ${critical ? styles.critical : ""}`}>
+      <header className={styles.brand}>
+        <p>VIGIL OS</p>
+        <h1>/ WORKER SAFETY</h1>
+      </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="size-4 text-primary" aria-hidden="true" /> Shift status
-          </CardTitle>
-          <CardDescription>
-            Motion, GPS, wake lock, and WebSocket telemetry activate from the Start Shift tap.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div role="status" className="rounded-lg border border-border/80 bg-muted/25 p-4 text-sm leading-relaxed">
-            <p className="font-medium text-foreground">{statusMessage}</p>
-            <p className="mt-2 text-muted-foreground">
-              Worker ID <span className="font-mono text-foreground">{WORKER_ID}</span> · Zone label <span className="font-medium text-foreground">{zoneLabel}</span>
-            </p>
+      <section className={styles.controls} aria-label="Worker safety controls">
+        {screen.phase === "idle" ? (
+          <button type="button" className={`${styles.circle} ${styles.start}`} onClick={startMonitoring} aria-label="START MONITORING">
+            <span>START</span><small>MONITORING</small>
+          </button>
+        ) : critical ? (
+          <div className={styles.alarm} role="alert" aria-atomic="true">
+            <h2>{screen.phase === "failed" ? "ALERT FAILED" : "FALL DETECTED"}</h2>
+            <p>{screen.phase === "notified" ? "SUPERVISOR NOTIFIED"
+              : screen.phase === "sending" ? "SENDING ALERT…"
+                : screen.phase === "resolving" ? "CONFIRMING…" : screen.note}</p>
           </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <StatusTile
-              title="Telemetry channel"
-              value={formatCapabilityState(socketState)}
-              hint={
-                socketState === "connected"
-                  ? "Live WebSocket stream to the API is active."
-                  : "The worker WebSocket opens after the sensor permissions flow."
-              }
-            />
-            <StatusTile
-              title="Motion sensor"
-              value={formatCapabilityState(motionState)}
-              hint="Accelerometer and gyroscope readings are sampled from DeviceMotion."
-            />
-            <StatusTile
-              title="Location"
-              value={formatCapabilityState(locationState)}
-              hint={location ? formatLocation(location) : "Falls back to Unknown Zone if GPS is denied."}
-            />
-            <StatusTile
-              title="Wake lock"
-              value={formatCapabilityState(wakeLockState)}
-              hint="Prevents screen sleep on supported, secure mobile browsers."
-            />
+        ) : (
+          <div className={styles.circle} role="status" aria-atomic="true">
+            <span className={styles.indicator} aria-hidden="true" />
+            <span className={styles.stateLabel}>{circleText}</span>
+            <small>{screen.phase === "possible" ? "Checking…"
+              : screen.phase === "requesting" ? "Motion access" : "MOTION ACTIVE"}</small>
           </div>
-        </CardContent>
-      </Card>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Latest worker payload</CardTitle>
-          <CardDescription>
-            Preview of the `worker_mobile` WebSocket payload being sent at 10 Hz.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-border/80 bg-muted/25 p-4">
-            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Move3D className="size-4 text-primary" aria-hidden="true" /> Motion sample
-            </p>
-            <dl className="mt-3 space-y-2 text-sm text-muted-foreground">
-              <div className="flex items-center justify-between gap-4">
-                <dt>Acceleration</dt>
-                <dd className="font-mono text-foreground">{motion.accelG.toFixed(2)} g</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt>Gyroscope</dt>
-                <dd className="font-mono text-foreground">{motion.gyroRad.toFixed(2)} rad/s</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt>Last sample</dt>
-                <dd className="font-mono text-foreground">{formatSampleTime(motion.capturedAt)}</dd>
-              </div>
-            </dl>
-          </div>
+        {screen.phase === "notified" && (
+          <button type="button" className={styles.action} onClick={() => void reportFall(true)}>I&apos;M OK</button>
+        )}
+        {screen.phase === "failed" && (
+          <button type="button" className={styles.action} onClick={() => void reportFall(retryResolution.current)}>RETRY</button>
+        )}
+        <button type="button" className={styles.stop} onClick={stopMonitoring} disabled={screen.phase === "idle"}>STOP</button>
+        <p className={styles.note} role="status">{screen.phase === "idle" ? screen.note : ""}</p>
+      </section>
 
-          <div className="rounded-xl border border-border/80 bg-muted/25 p-4">
-            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <MapPin className="size-4 text-primary" aria-hidden="true" /> Position sample
-            </p>
-            <dl className="mt-3 space-y-2 text-sm text-muted-foreground">
-              <div className="flex items-center justify-between gap-4">
-                <dt>Coordinates</dt>
-                <dd className="font-mono text-foreground">{formatLocation(location)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt>Backend sync</dt>
-                <dd className="font-mono text-foreground">{formatSampleTime(lastSyncedAt)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt>Streaming since</dt>
-                <dd className="font-mono text-foreground">{formatSampleTime(streamingSince)}</dd>
-              </div>
-            </dl>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className={cn("size-2 rounded-full", toneClasses(socketState))} />
-        No camera or microphone access is requested on this device. Motion and location only.
-      </div>
-    </div>
+      <div aria-hidden="true" />
+    </main>
   );
 }

@@ -11,7 +11,7 @@ WORKSPACE_ROOT = (
     else API_ROOT.parent
 )
 ENV_FILE = (WORKSPACE_ROOT / ".env").resolve()
-DEFAULT_VISION_MODEL_WEIGHTS = (API_ROOT / "ml_models" / "vigil-os-ppe.pt").resolve()
+DEFAULT_VISION_MODEL_WEIGHTS = (API_ROOT / "models" / "best.pt").resolve()
 
 
 class Settings(BaseSettings):
@@ -27,6 +27,8 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
             "https://localhost:8443",
             "https://127.0.0.1:8443",
         ]
@@ -34,7 +36,14 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     vision_model_weights: Path = DEFAULT_VISION_MODEL_WEIGHTS
     vision_confidence_threshold: float = Field(default=0.25, ge=0.0, le=1.0)
-    monitored_ppe_classes: list[str] = Field(default_factory=lambda: ["hardhat", "vest", "mask"])
+    monitored_ppe_classes: list[str] = Field(default_factory=lambda: ["hardhat", "vest"])
+    camera_left_video: Path = API_ROOT / "videos" / "testleft.mp4"
+    camera_right_video: Path = API_ROOT / "videos" / "testright.mp4"
+    cameras_enabled: bool = True
+    camera_max_fps: float = Field(default=15, ge=1, le=30)
+    vision_width: int = Field(default=640, ge=320, le=1280)
+    vision_height: int = Field(default=384, ge=192, le=768)
+    vision_cpu_threads: int = Field(default=2, ge=1, le=8)
     worker_api_tokens: list[str] = Field(default_factory=lambda: ["dev_device_worker_001"])
     worker_telemetry_ttl_seconds: int = Field(default=30, ge=10, le=3600)
     hardware_api_tokens: list[str] = Field(default_factory=lambda: ["dev_device_machine_001"])
@@ -63,7 +72,9 @@ class Settings(BaseSettings):
                 )
         return origins
 
-    @field_validator("vision_model_weights", mode="before")
+    @field_validator(
+        "vision_model_weights", "camera_left_video", "camera_right_video", mode="before",
+    )
     @classmethod
     def resolve_vision_model_weights(cls, value: str | Path) -> Path:
         path = Path(value)

@@ -49,7 +49,7 @@ export function SystemStatus() {
       </CardHeader>
       <CardContent aria-live="polite" aria-atomic="true">
         <p className="mb-5 flex items-center gap-2 text-sm font-medium">
-          <span className={cn("size-2 rounded-full", !health ? "bg-muted-foreground" : ready ? "bg-emerald-400" : "bg-amber-400")} />
+          <span className={cn("size-2 rounded-full", !health ? "bg-muted-foreground" : ready ? "bg-white" : "bg-amber-400")} />
           {label}
         </p>
         <dl className="space-y-3 text-sm">

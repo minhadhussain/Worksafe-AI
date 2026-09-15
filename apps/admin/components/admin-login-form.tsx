@@ -99,7 +99,7 @@ export function AdminLoginForm() {
 
       <p
         role="status"
-        className={`text-sm leading-relaxed ${state === "error" ? "text-rose-300" : "text-muted-foreground"}`}
+        className={`text-sm leading-relaxed ${state === "error" ? "text-red-300" : "text-muted-foreground"}`}
       >
         {message}
       </p>

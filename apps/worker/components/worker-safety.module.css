@@ -1,0 +1,45 @@
+.page {
+  min-height: 100svh;
+  width: 100%;
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  background: #050505;
+  color: #fff;
+  text-align: center;
+}
+
+.brand { align-self: start; padding-top: clamp(12px, 4svh, 40px); }
+.brand p { font-size: 17px; font-weight: 700; letter-spacing: .2em; }
+.brand h1 { margin-top: 10px; font-size: 10px; font-weight: 400; letter-spacing: .22em; color: #a3a3a3; }
+.controls { display: flex; width: 100%; max-width: 360px; flex-direction: column; align-items: center; }
+.circle { width: clamp(172px, 24svh, 200px); height: clamp(172px, 24svh, 200px); border: 1px solid #555; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; background: transparent; color: #fff; }
+.circle > span { font-size: 29px; font-weight: 700; letter-spacing: -.02em; }
+.circle small { font-size: 9px; letter-spacing: .14em; }
+.circle .stateLabel { font-size: 15px; letter-spacing: .04em; }
+.circle .indicator { width: 6px; height: 6px; margin-bottom: 6px; border-radius: 50%; background: #fff; }
+.start { border-color: var(--primary); background: var(--primary); color: #10150b; }
+.start:hover { filter: brightness(.96); }
+.start:active { filter: brightness(.9); }
+.stop, .action { min-height: 44px; min-width: 100px; margin-top: 24px; padding: 10px 22px; border: 1px solid #747474; border-radius: 2px; background: transparent; color: #fff; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+.stop:hover:not(:disabled), .action:hover { border-color: #fff; background: #ffffff08; }
+.stop:disabled { color: #777; border-color: #333; cursor: default; }
+.action { background: #fff; color: #111; border-color: #fff; min-width: 140px; }
+.action:hover { background: #ddd; color: #111; }
+.action + .stop { margin-top: 12px; }
+.note { min-height: 34px; margin-top: 20px; max-width: 260px; font-size: 10px; line-height: 1.7; letter-spacing: .08em; color: #aaa; }
+.critical { background: #200505; }
+.alarm { padding: 20px 0; }
+.alarm h2 { color: #ff453a; font-size: clamp(28px, 7vw, 38px); font-weight: 750; line-height: 1.15; letter-spacing: -.04em; }
+.alarm p { max-width: 290px; margin: 18px auto 0; color: #eee; font-size: 11px; line-height: 1.7; letter-spacing: .07em; }
+.page button:focus-visible { outline: 2px solid #fff; outline-offset: 5px; }
+
+@media (max-height: 560px) {
+  .page { padding-top: 14px; padding-bottom: 14px; }
+  .brand { padding-top: 0; }
+  .brand h1 { margin-top: 5px; }
+  .circle { width: 148px; height: 148px; }
+  .stop, .action { margin-top: 16px; }
+  .note { min-height: 20px; margin-top: 12px; }
+}

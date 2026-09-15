@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start --hostname localhost --port 3001",
     "lint": "eslint . --max-warnings=0",
+    "test": "node --experimental-strip-types --test tests/fall-detector.test.mjs",
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {

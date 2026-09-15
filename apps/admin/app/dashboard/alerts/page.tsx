@@ -1,9 +1,5 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { AlertsPage } from "@/components/dashboard/pages/alerts-page";
-
-export const metadata: Metadata = { title: "Alerts" };
-
-export default function DashboardAlertsRoute() {
-  return <AlertsPage />;
+export default function DashboardAlertsRedirectRoute() {
+  redirect("/dashboard/incidents");
 }

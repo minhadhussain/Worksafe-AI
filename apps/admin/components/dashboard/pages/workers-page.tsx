@@ -35,13 +35,13 @@ export function WorkersPage() {
     <div className="space-y-6 pb-8">
       <SectionHeader
         eyebrow="Workers"
-        title="Workers"
-        description="24 ACTIVE workers are tracked by interpreted safety state, not raw sensor values."
+        title="WORKERS"
+        description={`${summary.activeWorkers} workers with received safety reports.`}
       />
 
-      <div className="grid gap-4 rounded-2xl border border-border/80 bg-card/75 p-5 md:grid-cols-[1.2fr_auto] md:items-end">
+      <div className="grid gap-4 border border-white/10 bg-black p-5 md:grid-cols-[1.2fr_auto] md:items-end">
         <div>
-          <label htmlFor="worker-search" className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          <label htmlFor="worker-search" className="text-[11px] uppercase tracking-[0.18em] text-white/45">
             Search worker ID...
           </label>
           <input
@@ -50,7 +50,7 @@ export function WorkersPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search worker ID..."
-            className="mt-2 h-12 w-full rounded-xl border border-border/80 bg-muted/20 px-4 text-sm text-foreground outline-none transition focus:border-primary/35 focus:ring-2 focus:ring-primary/20"
+            className="mt-2 h-12 w-full border border-white/10 bg-black px-4 text-sm text-white outline-none transition focus:border-lime-300/35"
           />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -59,7 +59,7 @@ export function WorkersPage() {
               key={item.value}
               type="button"
               onClick={() => setFilter(item.value)}
-              className={`rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${filter === item.value ? "border-primary/40 bg-primary/10 text-primary" : "border-border/80 bg-transparent text-muted-foreground hover:border-primary/30 hover:text-foreground"}`}
+              className={`border-b px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${filter === item.value ? "border-lime-300 text-white" : "border-transparent text-white/45 hover:border-white/30 hover:text-white"}`}
             >
               {item.label}
             </button>
@@ -68,7 +68,7 @@ export function WorkersPage() {
       </div>
 
       {zoneFilter ? (
-        <p className="text-sm text-muted-foreground">Filtered to {zoneFilter.replace("zone-", "Zone ")}.</p>
+        <p className="text-sm text-white/55">Filtered to {zoneFilter.replace("zone-", "Zone ")}.</p>
       ) : null}
 
       {filteredWorkers.length > 0 ? (

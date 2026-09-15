@@ -43,23 +43,23 @@ export function CamerasPage() {
             key={camera.id}
             type="button"
             onClick={() => setManualCameraId(camera.id)}
-            className={`rounded-2xl border p-5 text-left transition ${camera.id === selectedCameraId ? "border-primary/40 bg-primary/6" : "border-border/80 bg-card/75 hover:border-primary/30"}`}
+            className={`border p-5 text-left transition ${camera.id === selectedCameraId ? "border-white/25 bg-white/[0.02]" : "border-white/10 bg-black hover:border-white/20"}`}
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-primary">{camera.name}</p>
-                <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground">{camera.zoneName}</h3>
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-lime-300">{camera.name}</p>
+                <h3 className="mt-2 text-lg font-semibold tracking-tight text-white">{camera.zoneName}</h3>
               </div>
-              <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${camera.interpretation === "COMPLIANT" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/35 bg-rose-500/10 text-rose-300"}`}>
+              <span className={`border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${camera.interpretation === "COMPLIANT" ? "border-white/15 text-white" : "border-red-500/35 text-red-300"}`}>
                 {camera.status}
               </span>
             </div>
             <div className="mt-4">
               <CameraVideoSurface camera={camera} compact />
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-muted-foreground">
-              <div>{camera.workersDetected} workers</div>
-              <div>{camera.ppeViolations} PPE violations</div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-white/55">
+              <div>{camera.hasInference ? camera.workersDetected : "—"} persons detected</div>
+              <div className={camera.incidentCount > 0 ? "text-red-500" : "text-white/55"}>{camera.incidentCount} confirmed incidents</div>
             </div>
           </button>
         ))}
